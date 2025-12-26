@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Brain, Plus, Search, Settings, LogOut, Key, Book, BarChart3 } from 'lucide-react';
+import { Brain, Plus, Search, Settings, LogOut, Key, Book, BarChart3, Trash2, Network } from 'lucide-react';
 import AddMemoryModal from '../components/AddMemoryModal';
 import SearchMemories from '../components/SearchMemories';
 import APIKeyManager from '../components/APIKeyManager';
+import EpisodicMemoryView from '../components/EpisodicMemoryView';
+import Modal from '../components/Modal';
 import { memoryService } from '../services/memoryService';
 import { Memory } from '../types/memory';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'search' | 'api-keys' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'search' | 'episodic' | 'api-keys' | 'settings'>('dashboard');
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [isLoadingMemories, setIsLoadingMemories] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
 
   useEffect(() => {
     fetchMemories();
@@ -35,6 +39,26 @@ const Dashboard: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const handleDeleteMemory = (memory: Memory) => {
+    setMemoryToDelete(memory);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteMemory = async () => {
+    if (!memoryToDelete) return;
+
+    try {
+      await memoryService.deleteMemory(memoryToDelete.id);
+      setShowDeleteConfirm(false);
+      setMemoryToDelete(null);
+      // Refresh the memories list
+      fetchMemories();
+    } catch (error) {
+      console.error('Failed to delete memory:', error);
+      alert('Failed to delete memory. Please try again.');
+    }
   };
 
   return (
@@ -97,6 +121,17 @@ const Dashboard: React.FC = () => {
             >
               <Search className="h-5 w-5 inline mr-2" />
               Search
+            </button>
+            <button
+              onClick={() => setActiveTab('episodic')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'episodic'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Network className="h-5 w-5 inline mr-2" />
+              Episodic Memory
             </button>
             <button
               onClick={() => setActiveTab('api-keys')}
@@ -239,6 +274,13 @@ const Dashboard: React.FC = () => {
                             {memory.title || 'Untitled Memory'}
                           </h4>
                           <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleDeleteMemory(memory)}
+                              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Delete memory"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                             <span className={`px-2 py-1 text-xs rounded-full ${
                               memory.priority === 'high' ? 'bg-red-100 text-red-800' :
                               memory.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
@@ -293,6 +335,25 @@ const Dashboard: React.FC = () => {
         )}
 
         {activeTab === 'search' && <SearchMemories />}
+        {activeTab === 'episodic' && (
+          <div className="bg-white rounded-lg shadow-sm">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">Episodic Memory Network</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Explore your memories through clusters, relationships, and temporal connections
+              </p>
+            </div>
+            <div className="p-6">
+              <EpisodicMemoryView
+                memories={memories}
+                onMemorySelect={(memory) => {
+                  // Could open a memory detail modal or navigate to search with that memory
+                  console.log('Selected memory:', memory);
+                }}
+              />
+            </div>
+          </div>
+        )}
         {activeTab === 'api-keys' && <APIKeyManager />}
         {activeTab === 'settings' && (
           <div className="bg-white rounded-lg shadow-sm p-6">
@@ -312,6 +373,38 @@ const Dashboard: React.FC = () => {
           }}
         />
       )}
+
+      {/* Delete Memory Confirmation Modal */}
+      <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} size="sm">
+        <div className="p-6">
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <div className="p-3 bg-red-100 rounded-full">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Memory</h3>
+            <p className="text-sm text-gray-600">
+              This action cannot be undone. The memory "{memoryToDelete?.title || 'Untitled'}" will be permanently deleted.
+            </p>
+          </div>
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDeleteMemory}
+              className="flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg transition-colors font-medium"
+            >
+              Delete Memory
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
