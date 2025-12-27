@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Plus, Trash2, Copy, Eye } from 'lucide-react';
+import { Key, Plus, Trash2, Eye, FileText, AlertCircle } from 'lucide-react';
 import { apiKeyService } from '../services/authService';
 import Modal from './Modal';
 import SuccessModal from './SuccessModal';
@@ -170,25 +170,6 @@ const APIKeyManager: React.FC = () => {
     setShowDeleteConfirm(true);
   };
 
-  const copyToClipboard = async (text: string, successMessage: string = 'Copied to clipboard!') => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setSuccessModalData({
-        title: 'Copied!',
-        message: successMessage,
-        type: 'success'
-      });
-      setShowSuccessModal(true);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-      setSuccessModalData({
-        title: 'Copy Failed',
-        message: 'Failed to copy to clipboard.',
-        type: 'error'
-      });
-      setShowSuccessModal(true);
-    }
-  };
 
   const viewAPIKey = (apiKey: APIKey) => {
     // For existing keys, try to get the full key from localStorage
@@ -245,81 +226,160 @@ const APIKeyManager: React.FC = () => {
 
       {/* Create API Key Form */}
       {showCreateForm && (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New API Key</h2>
-          <form onSubmit={handleCreateKey} className="space-y-4">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl shadow-lg border border-blue-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
+            <div className="flex items-center space-x-4">
+              <div className="p-3 bg-white bg-opacity-20 rounded-xl">
+                <Key className="h-8 w-8 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white">Create New API Key</h2>
+                <p className="text-blue-100 mt-1">Generate a secure API key for programmatic access to your memories</p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleCreateKey} className="p-8 space-y-8">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+              <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
+                <Key className="h-4 w-4 mr-2 text-blue-500" />
+                API Key Name <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 required
                 value={newKey.name}
                 onChange={(e) => setNewKey(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., Production API Key"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm"
+                placeholder="e.g., Production API Key, Development Key, Mobile App Key"
               />
+              <p className="text-xs text-gray-500 mt-2">Choose a descriptive name to easily identify this key</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
+                <FileText className="h-4 w-4 mr-2 text-blue-500" />
+                Description <span className="text-gray-400">(Optional)</span>
+              </label>
               <textarea
                 value={newKey.description}
                 onChange={(e) => setNewKey(prev => ({ ...prev, description: e.target.value }))}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Optional description for this API key"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white shadow-sm resize-none"
+                placeholder="Describe the purpose of this API key (e.g., 'For mobile app integration', 'Production environment access')"
               />
+              <p className="text-xs text-gray-500 mt-2">Help others understand what this key is used for</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
-              <div className="space-y-2">
-                {['read', 'write', 'delete'].map((permission) => (
-                  <label key={permission} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={newKey.permissions.includes(permission)}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setNewKey(prev => ({
-                          ...prev,
-                          permissions: checked
-                            ? [...prev.permissions, permission]
-                            : prev.permissions.filter(p => p !== permission)
-                        }));
-                      }}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700 capitalize">{permission}</span>
-                  </label>
-                ))}
+              <label className="flex items-center text-sm font-semibold text-gray-700 mb-4">
+                <Eye className="h-4 w-4 mr-2 text-blue-500" />
+                Permissions
+              </label>
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <p className="text-sm text-gray-600 mb-4">Select what actions this API key can perform:</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { key: 'read', label: 'Read', description: 'View and retrieve memories' },
+                    { key: 'write', label: 'Write', description: 'Create and update memories' },
+                    { key: 'delete', label: 'Delete', description: 'Remove memories' }
+                  ].map((permission) => (
+                    <label
+                      key={permission.key}
+                      className={`relative flex flex-col p-4 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
+                        newKey.permissions.includes(permission.key)
+                          ? 'border-blue-500 bg-blue-50 shadow-md'
+                          : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-start">
+                        <input
+                          type="checkbox"
+                          checked={newKey.permissions.includes(permission.key)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setNewKey(prev => ({
+                              ...prev,
+                              permissions: checked
+                                ? [...prev.permissions, permission.key]
+                                : prev.permissions.filter(p => p !== permission.key)
+                            }));
+                          }}
+                          className="sr-only"
+                        />
+                        <div className={`w-5 h-5 border-2 rounded-md mr-3 mt-0.5 flex-shrink-0 transition-colors ${
+                          newKey.permissions.includes(permission.key)
+                            ? 'bg-blue-500 border-blue-500'
+                            : 'border-gray-300'
+                        }`}>
+                          {newKey.permissions.includes(permission.key) && (
+                            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
+                        <div>
+                          <div className={`font-semibold text-sm ${
+                            newKey.permissions.includes(permission.key) ? 'text-blue-900' : 'text-gray-700'
+                          }`}>
+                            {permission.label}
+                          </div>
+                          <div className={`text-xs mt-1 ${
+                            newKey.permissions.includes(permission.key) ? 'text-blue-600' : 'text-gray-500'
+                          }`}>
+                            {permission.description}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Expiration Date (Optional)</label>
-              <input
-                type="datetime-local"
-                value={newKey.expires_at}
-                onChange={(e) => setNewKey(prev => ({ ...prev, expires_at: e.target.value }))}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
+                <AlertCircle className="h-4 w-4 mr-2 text-blue-500" />
+                Expiration Date <span className="text-gray-400">(Optional)</span>
+              </label>
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <input
+                  type="datetime-local"
+                  value={newKey.expires_at}
+                  onChange={(e) => setNewKey(prev => ({ ...prev, expires_at: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+                />
+                <p className="text-xs text-gray-500 mt-2 flex items-center">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  Leave empty for a permanent API key (recommended for development)
+                </p>
+              </div>
             </div>
 
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                className="px-6 py-3 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 border border-gray-300"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isLoading || !newKey.name.trim()}
-                className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 rounded-md"
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all duration-200 font-semibold shadow-lg hover:shadow-xl flex items-center"
               >
-                {isLoading ? 'Creating...' : 'Create API Key'}
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create API Key
+                  </>
+                )}
               </button>
             </div>
           </form>

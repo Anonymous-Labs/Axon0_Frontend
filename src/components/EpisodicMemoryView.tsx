@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Memory, EpisodicCluster } from '../types/memory';
+import { ZoomIn, ZoomOut, Maximize2, Minimize2 } from 'lucide-react';
 
 interface EpisodicMemoryViewProps {
   memories: Memory[];
@@ -23,6 +24,100 @@ const EpisodicMemoryView: React.FC<EpisodicMemoryViewProps> = ({
   const [viewMode, setViewMode] = useState<'clusters' | 'graph' | 'timeline'>('clusters');
   const [memoryNodes, setMemoryNodes] = useState<MemoryNode[]>([]);
   const [clusters, setClusters] = useState<EpisodicCluster[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Layout calculation functions
+  const calculateNodePositions = useCallback((nodes: MemoryNode[], width: number, height: number) => {
+    if (nodes.length === 0) return nodes;
+
+    // Use a force-directed layout simulation
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) / 3;
+
+    return nodes.map((node, index) => {
+      // Position nodes in a circular pattern initially
+      const angle = (index / nodes.length) * 2 * Math.PI;
+      const distance = radius * (0.5 + Math.random() * 0.5); // Add some randomness
+
+      return {
+        ...node,
+        x: centerX + Math.cos(angle) * distance,
+        y: centerY + Math.sin(angle) * distance,
+      };
+    });
+  }, []);
+
+  // Generate connections based on shared tags, concepts, and temporal relationships
+  const generateConnections = useCallback((memories: Memory[]) => {
+    const connections: { [key: number]: number[] } = {};
+
+    memories.forEach((memory, i) => {
+      connections[memory.id] = [];
+
+      memories.forEach((otherMemory, j) => {
+        if (i === j) return;
+
+        let connectionStrength = 0;
+
+        // Check shared tags
+        const sharedTags = memory.tags?.filter(tag =>
+          otherMemory.tags?.includes(tag)
+        ) || [];
+        connectionStrength += sharedTags.length * 0.3;
+
+        // Check shared concepts
+        const sharedConcepts = memory.key_concepts?.filter(concept =>
+          otherMemory.key_concepts?.includes(concept)
+        ) || [];
+        connectionStrength += sharedConcepts.length * 0.4;
+
+        // Check temporal proximity (within same day)
+        const memoryDate = new Date(memory.created_at).toDateString();
+        const otherDate = new Date(otherMemory.created_at).toDateString();
+        if (memoryDate === otherDate) {
+          connectionStrength += 0.2;
+        }
+
+        // Check cluster relationship
+        if (memory.cluster_id && memory.cluster_id === otherMemory.cluster_id) {
+          connectionStrength += 0.5;
+        }
+
+        // Add connection if strength is significant
+        if (connectionStrength > 0.3) {
+          connections[memory.id].push(otherMemory.id);
+        }
+      });
+    });
+
+    return connections;
+  }, []);
+
+  // Zoom and pan handlers
+  const handleZoom = useCallback((delta: number) => {
+    setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
+  }, []);
+
+  const handlePan = useCallback((deltaX: number, deltaY: number) => {
+    setPanOffset(prev => ({
+      x: prev.x + deltaX,
+      y: prev.y + deltaY
+    }));
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(prev => !prev);
+    if (!isFullscreen) {
+      setZoom(1);
+      setPanOffset({ x: 0, y: 0 });
+    }
+  }, [isFullscreen]);
 
   useEffect(() => {
     // Group memories by clusters
@@ -51,16 +146,21 @@ const EpisodicMemoryView: React.FC<EpisodicMemoryViewProps> = ({
 
     setClusters(clusterList);
 
-    // Create memory nodes for graph view
-    const nodes: MemoryNode[] = memories.map((memory, index) => ({
+    // Generate connections between memories
+    const connections = generateConnections(memories);
+
+    // Create memory nodes for graph view with proper positioning
+    const nodes: MemoryNode[] = memories.map((memory) => ({
       id: memory.id,
-      x: Math.random() * 800,
-      y: Math.random() * 600,
+      x: 0, // Will be set by calculateNodePositions
+      y: 0,
       memory,
-      connections: [] // Would be populated from relationships
+      connections: connections[memory.id] || []
     }));
 
-    setMemoryNodes(nodes);
+    // Calculate proper positions for nodes
+    const positionedNodes = calculateNodePositions(nodes, 800, 600);
+    setMemoryNodes(positionedNodes);
   }, [memories]);
 
   const renderClusterView = () => (
@@ -132,70 +232,226 @@ const EpisodicMemoryView: React.FC<EpisodicMemoryViewProps> = ({
     </div>
   );
 
-  const renderGraphView = () => (
-    <div className="relative w-full h-96 bg-gray-50 rounded-lg overflow-hidden">
-      <svg className="w-full h-full">
-        {/* Render connections */}
-        {memoryNodes.map((node) =>
-          node.connections.map((targetId) => {
-            const targetNode = memoryNodes.find(n => n.id === targetId);
-            if (!targetNode) return null;
+  const renderGraphView = () => {
+    const containerHeight = isFullscreen ? '80vh' : 'h-96';
 
-            return (
-              <line
-                key={`${node.id}-${targetId}`}
-                x1={node.x}
-                y1={node.y}
-                x2={targetNode.x}
-                y2={targetNode.y}
-                stroke="#cbd5e0"
-                strokeWidth="2"
-              />
-            );
-          })
-        )}
-
-        {/* Render memory nodes */}
-        {memoryNodes.map((node) => (
-          <circle
-            key={node.id}
-            cx={node.x}
-            cy={node.y}
-            r={Math.max(5, Math.min(20, node.memory.importance_score * 15))}
-            fill={
-              node.memory.priority === 'high' ? '#ef4444' :
-              node.memory.priority === 'medium' ? '#f59e0b' :
-              '#10b981'
-            }
-            className="cursor-pointer hover:opacity-80"
-            onClick={() => {
-              setSelectedMemory(node.memory);
-              onMemorySelect?.(node.memory);
-            }}
+    return (
+      <div className={`relative w-full ${containerHeight} bg-gradient-to-br from-slate-50 to-gray-100 rounded-xl overflow-hidden border border-gray-200`}>
+        {/* Graph Controls */}
+        <div className="absolute top-4 right-4 z-10 flex gap-2">
+          <button
+            onClick={() => handleZoom(0.2)}
+            className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+            title="Zoom In"
           >
-            <title>{node.memory.title || 'Untitled Memory'}</title>
-          </circle>
-        ))}
-      </svg>
+            <ZoomIn className="h-4 w-4 text-gray-600" />
+          </button>
+          <button
+            onClick={() => handleZoom(-0.2)}
+            className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOut className="h-4 w-4 text-gray-600" />
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4 text-gray-600" /> : <Maximize2 className="h-4 w-4 text-gray-600" />}
+          </button>
+        </div>
 
-      <div className="absolute bottom-4 left-4 bg-white p-2 rounded shadow">
-        <div className="text-sm">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-3 h-3 bg-red-500 rounded"></div>
-            <span>High Priority</span>
+        {/* Main Graph SVG */}
+        <svg
+          ref={svgRef}
+          className="w-full h-full cursor-grab active:cursor-grabbing"
+          onMouseDown={(e) => {
+            setIsDragging(true);
+            setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+          }}
+          onMouseMove={(e) => {
+            if (isDragging) {
+              const newX = e.clientX - dragStart.x;
+              const newY = e.clientY - dragStart.y;
+              setPanOffset({ x: newX, y: newY });
+            }
+          }}
+          onMouseUp={() => setIsDragging(false)}
+          onMouseLeave={() => setIsDragging(false)}
+          onWheel={(e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY > 0 ? -0.1 : 0.1;
+            handleZoom(zoomFactor);
+          }}
+        >
+          <defs>
+            {/* Arrow marker for directed connections */}
+            <marker
+              id="arrowhead"
+              markerWidth="10"
+              markerHeight="7"
+              refX="9"
+              refY="3.5"
+              orient="auto"
+            >
+              <polygon
+                points="0 0, 10 3.5, 0 7"
+                fill="#94a3b8"
+              />
+            </marker>
+
+            {/* Glow effect for nodes */}
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoom})`}>
+            {/* Render connections with arrows */}
+            {memoryNodes.map((node) =>
+              node.connections.map((targetId) => {
+                const targetNode = memoryNodes.find(n => n.id === targetId);
+                if (!targetNode) return null;
+
+                // Calculate control points for curved lines
+                const dx = targetNode.x - node.x;
+                const dy = targetNode.y - node.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance === 0) return null;
+
+                const controlPointOffset = Math.min(distance * 0.3, 50);
+                const midX = (node.x + targetNode.x) / 2;
+                const midY = (node.y + targetNode.y) / 2;
+
+                // Perpendicular vector for curve
+                const perpX = -dy / distance * controlPointOffset;
+                const perpY = dx / distance * controlPointOffset;
+
+                const pathData = `M ${node.x} ${node.y} Q ${midX + perpX} ${midY + perpY} ${targetNode.x} ${targetNode.y}`;
+
+                return (
+                  <g key={`${node.id}-${targetId}`}>
+                    <path
+                      d={pathData}
+                      stroke="#94a3b8"
+                      strokeWidth="2"
+                      fill="none"
+                      markerEnd="url(#arrowhead)"
+                      opacity="0.6"
+                    />
+                  </g>
+                );
+              })
+            )}
+
+            {/* Render memory nodes with enhanced styling */}
+            {memoryNodes.map((node) => {
+              const radius = Math.max(8, Math.min(25, node.memory.importance_score * 20));
+              const fillColor = node.memory.priority === 'high' ? '#ef4444' :
+                               node.memory.priority === 'medium' ? '#f59e0b' : '#10b981';
+
+              return (
+                <g key={node.id}>
+                  {/* Node shadow/glow */}
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius + 2}
+                    fill={fillColor}
+                    opacity="0.2"
+                    filter="url(#glow)"
+                  />
+
+                  {/* Main node */}
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius}
+                    fill={fillColor}
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                    className="cursor-pointer hover:stroke-gray-300 transition-all duration-200"
+                    onClick={() => {
+                      setSelectedMemory(node.memory);
+                      onMemorySelect?.(node.memory);
+                    }}
+                  />
+
+                  {/* Node label */}
+                  <text
+                    x={node.x}
+                    y={node.y + radius + 15}
+                    textAnchor="middle"
+                    className="text-xs font-medium fill-gray-700 pointer-events-none select-none"
+                    style={{ fontSize: '10px' }}
+                  >
+                    {node.memory.title || 'Untitled'}
+                  </text>
+
+                  {/* Importance indicator */}
+                  <circle
+                    cx={node.x + radius - 5}
+                    cy={node.y - radius + 5}
+                    r="3"
+                    fill="#ffffff"
+                    stroke={fillColor}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={node.x + radius - 5}
+                    y={node.y - radius + 8}
+                    textAnchor="middle"
+                    className="text-xs font-bold fill-gray-700 pointer-events-none select-none"
+                    style={{ fontSize: '8px' }}
+                  >
+                    {Math.round(node.memory.importance_score * 100)}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+
+        {/* Legend */}
+        <div className="absolute bottom-4 left-4 bg-white p-4 rounded-xl shadow-lg border border-gray-200">
+          <h4 className="font-semibold text-sm text-gray-800 mb-3">Legend</h4>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 bg-red-500 rounded-full"></div>
+              <span className="text-sm text-gray-600">High Priority</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
+              <span className="text-sm text-gray-600">Medium Priority</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+              <span className="text-sm text-gray-600">Low Priority</span>
+            </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
+              <div className="w-4 h-4 border-2 border-slate-400 rounded-full bg-white flex items-center justify-center">
+                <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+              </div>
+              <span className="text-sm text-gray-600">Connection</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-            <span>Medium Priority</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded"></div>
-            <span>Low Priority</span>
+        </div>
+
+        {/* Zoom and connection info */}
+        <div className="absolute top-4 left-4 bg-white px-3 py-2 rounded-lg shadow-md border border-gray-200">
+          <div className="text-xs text-gray-600">
+            Zoom: {Math.round(zoom * 100)}% | Connections: {memoryNodes.reduce((sum, node) => sum + node.connections.length, 0)} | Nodes: {memoryNodes.length}
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderTimelineView = () => (
     <div className="space-y-4 p-4">
@@ -247,7 +503,7 @@ const EpisodicMemoryView: React.FC<EpisodicMemoryViewProps> = ({
   );
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${isFullscreen ? 'fixed inset-0 z-50 bg-white p-6' : ''}`}>
       {/* View Mode Selector */}
       <div className="flex gap-2 mb-4 p-4 border-b">
         <button
