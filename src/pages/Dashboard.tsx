@@ -9,6 +9,8 @@ import EpisodicMemoryView from '../components/EpisodicMemoryView';
 import Modal from '../components/Modal';
 import { memoryService } from '../services/memoryService';
 import { Memory } from '../types/memory';
+import { ErrorService } from '../services/errorService';
+import { config } from '../config/environment';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -30,7 +32,11 @@ const Dashboard: React.FC = () => {
       const fetchedMemories = await memoryService.getMemories(10, 0);
       setMemories(fetchedMemories);
     } catch (error) {
-      console.error('Failed to fetch memories:', error);
+      // Error is already handled by errorService with user-friendly message
+      // Just log for debugging
+      if (config.enableLogging) {
+        console.error('Failed to fetch memories:', error);
+      }
     } finally {
       setIsLoadingMemories(false);
     }
@@ -56,8 +62,8 @@ const Dashboard: React.FC = () => {
       // Refresh the memories list
       fetchMemories();
     } catch (error) {
-      console.error('Failed to delete memory:', error);
-      alert('Failed to delete memory. Please try again.');
+      const errorMessage = ErrorService.showError(error, 'deleteMemory');
+      alert(errorMessage);
     }
   };
 

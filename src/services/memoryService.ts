@@ -1,13 +1,14 @@
 import axios from 'axios';
 import { Memory, MemoryCreate, MemoryUpdate, MemorySearch, MemorySearchResponse, MemoryStats, FeedbackCreate, Feedback } from '../types/memory';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { config } from '../config/environment';
+import { ErrorService } from './errorService';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: config.apiBaseUrl,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 seconds
 });
 
 // Add token to requests if available
@@ -19,16 +20,30 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Handle 401 - Unauthorized (token expired)
+    if (error.response?.status === 401) {
+      // Clear token and redirect to login
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const memoryService = {
   async createMemory(memoryData: MemoryCreate): Promise<Memory> {
     try {
-      console.log('Making API call to create memory:', memoryData);
       const response = await api.post('/api/v1/memories/', memoryData);
-      console.log('Memory created successfully:', response.data);
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to create memory:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'createMemory');
+      throw new Error(errorMessage);
     }
   },
 
@@ -36,9 +51,9 @@ export const memoryService = {
     try {
       const response = await api.get(`/api/v1/memories/${memoryId}`);
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to get memory:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'getMemory');
+      throw new Error(errorMessage);
     }
   },
 
@@ -46,18 +61,18 @@ export const memoryService = {
     try {
       const response = await api.put(`/api/v1/memories/${memoryId}`, memoryData);
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to update memory:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'updateMemory');
+      throw new Error(errorMessage);
     }
   },
 
   async deleteMemory(memoryId: number): Promise<void> {
     try {
       await api.delete(`/api/v1/memories/${memoryId}`);
-    } catch (error: any) {
-      console.error('Failed to delete memory:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'deleteMemory');
+      throw new Error(errorMessage);
     }
   },
 
@@ -67,9 +82,9 @@ export const memoryService = {
         params: { limit, offset }
       });
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to get memories:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'getMemories');
+      throw new Error(errorMessage);
     }
   },
 
@@ -77,9 +92,9 @@ export const memoryService = {
     try {
       const response = await api.post('/api/v1/memories/search', searchData);
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to search memories:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'searchMemories');
+      throw new Error(errorMessage);
     }
   },
 
@@ -87,9 +102,9 @@ export const memoryService = {
     try {
       const response = await api.post(`/api/v1/memories/${memoryId}/feedback`, feedbackData);
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to add feedback:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'addFeedback');
+      throw new Error(errorMessage);
     }
   },
 
@@ -97,9 +112,9 @@ export const memoryService = {
     try {
       const response = await api.get('/api/v1/memories/stats/overview');
       return response.data;
-    } catch (error: any) {
-      console.error('Failed to get memory stats:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorMessage = ErrorService.showError(error, 'getMemoryStats');
+      throw new Error(errorMessage);
     }
   },
 };
